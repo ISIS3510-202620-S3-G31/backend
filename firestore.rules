@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Public catalog of tools (Read-only for authenticated users)
+    match /tools/{toolId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Only admin via console/scripts
+    }
+
+    // User Profile document
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Private User Subcollections: photos, breathing sessions, check-ins, stats
+    match /users/{userId}/photos/{photoId} {
+      allow read, write, delete: if isOwner(userId);
+    }
+
+    match /users/{userId}/breathing_sessions/{sessionId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/mood_checkins/{checkinId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/stats/{statId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/feedback/{feedbackId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Fallback: deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
