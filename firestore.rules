@@ -1,52 +1,59 @@
 rules_version = '2';
 
+// Version 3 de reglas de Ark (Sprint 3):
+// - Soporte de birthDate (YYYY-MM-DD) para el registro de usuarios
+// - Retrocompatibilidad con age para el subequipo de Flutter
+// - Colecciones privadas actualizadas para Kotlin y Flutter
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
 
-    // Public catalog of tools (Read-only for authenticated users)
+    // Profile saved by register: name, email, and birthDate (or legacy age from flutter)
+    function isValidUser(data) {
+      return (data.keys().hasOnly(['name', 'birthDate', 'email']) ||
+              data.keys().hasOnly(['name', 'age', 'email']) ||
+              data.keys().hasOnly(['name', 'birthDate', 'age', 'email']))
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 254
+        && (!('birthDate' in data) || (data.birthDate is string && data.birthDate.size() >= 8 && data.birthDate.size() <= 15))
+        && (!('age' in data) || (data.age is int && data.age >= 0 && data.age <= 120));
+    }
+
+    match /users/{userId}/check_ins/{day} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/tool_feedback/{feedbackId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/recommendations/{recommendationId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Tools catalog: logged users can read, only the console can write
     match /tools/{toolId} {
-      allow read: if isAuthenticated();
-      allow write: if false; // Only admin via console/scripts
+      allow read: if request.auth != null;
+      allow write: if false;
     }
 
-    // User Profile document
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
-    }
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
 
-    // Private User Subcollections: photos, breathing sessions, check-ins, stats
-    match /users/{userId}/photos/{photoId} {
-      allow read, write, delete: if isOwner(userId);
-    }
-
-    match /users/{userId}/breathing_sessions/{sessionId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    match /users/{userId}/mood_checkins/{checkinId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    match /users/{userId}/stats/{statId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    match /users/{userId}/feedback/{feedbackId} {
-      allow read, write: if isOwner(userId);
-    }
-
-    // Fallback: deny all other access
-    match /{document=**} {
-      allow read, write: if false;
+      // Private data of each user
+      // Flutter: photos, breathing_sessions, tear_entries, tool_sessions, stats, feedback
+      // Kotlin: mood_checkins, photos, tool_interactions, stats_summary, useful_insights, tool_load_latency, screen_time
+      match /{collection}/{docId} {
+        allow read, write: if isOwner(userId)
+          && collection in ['photos', 'breathing_sessions', 'mood_checkins', 'tear_entries',
+                            'tool_sessions', 'stats', 'feedback',
+                            'tool_interactions', 'stats_summary', 'useful_insights',
+                            'tool_load_latency', 'screen_time'];
+      }
     }
   }
 }
